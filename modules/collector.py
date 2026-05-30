@@ -11,15 +11,11 @@ import time
 import re
 from bs4 import BeautifulSoup
 
-# --- ДОБАВЛЯЕМ ИМПОРТ НАШЕГО ДЕКОДЕРА ---
-# Мы берем его из news_search.py, который ты правила раньше
-from modules.news_search import decode_google_news_url
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from config import REQUEST_TIMEOUT, USER_AGENT
 
 
-# (Функция extract_date_from_html остается без изменений...)
 def extract_date_from_html(html, url):
     """ (Твой код без изменений) """
     if not html:
@@ -55,12 +51,9 @@ def extract_date_from_html(html, url):
     return None
 
 
-def fetch_article(url):
-    # Теперь url уже должен быть чистым,
-    # но оставим проверку на всякий случай
+def fetch_article(url, rss_date=None):  # <-- ДОБАВИЛИ rss_date КАК НЕОБЯЗАТЕЛЬНЫЙ ПАРАМЕТР
     if "news.google.com" in url:
         print(f" 🔗 Обнаружена ссылка Google News, декодируем через экстренный метод...")
-        # Если вдруг проскочила гугл-ссылка, этот принт подскажет
 
     print(f" 📥 Загрузка: {url}")
 
@@ -86,7 +79,7 @@ def fetch_article(url):
             if downloaded:
                 text = trafilatura.extract(downloaded)
 
-        # 4. Поиск даты в HTML вручную
+        # 4. Поиск даты в HTML вручную (если newspaper выдал None)
         if not date or (date and date.date() == datetime.now().date()):
             try:
                 resp = requests.get(url, timeout=REQUEST_TIMEOUT,
@@ -98,25 +91,30 @@ def fetch_article(url):
             except:
                 pass
 
-        # 5. Извлекаем домен
+        # 5. --- НАШ УМНЫЙ КОСТЫЛЬ (FALLBACK) ДЛЯ ДАТЫ ---
+        # Если дата ВСЁ ЕЩЕ None (newspaper и ручной поиск по HTML провалились)
+        if date is None and rss_date is not None:
+            date = rss_date
+            print(f"   ℹ️ Дата для {urlparse(url).netloc} взята из Google News RSS (Fallback)")
+        # ------------------------------------------------
+
+        # 6. Извлекаем домен
         domain = urlparse(url).netloc
         if domain.startswith('www.'):
             domain = domain[4:]
 
-        # 6. Финальная проверка
+        # 7. Финальная проверка объема текста
         if not text or len(text) < 200:
             print(f"   ❌ Слишком мало данных: {url}")
             return None
 
-        # Пауза
+        # Пауза вежливости
         time.sleep(1)
 
-        # Убираем часовой пояс
+        # Убираем часовой пояс для совместимости с базой данных/анализом
         if date and hasattr(date, 'tzinfo') and date.tzinfo is not None:
             date = date.replace(tzinfo=None)
 
-        # ТУТ ВАЖНО: Если после всех манипуляций мы всё еще на google.com,
-        # значит декодер не сработал.
         if "google.com" in domain:
             print(f"   ⚠️ Ошибка: Ссылка осталась заблокированной Google. Пропускаем.")
             return None
@@ -134,16 +132,30 @@ def fetch_article(url):
         return None
 
 
-def collect_articles_from_urls(url_list):
-    """ (Твой код без изменений) """
+def collect_articles_from_urls(google_news_items):
+    """
+    Принимает список словарей [{'url': ..., 'rss_date': ...}] из измененного news_search.py
+    """
     articles = []
-    # Убираем дубликаты из списка
-    url_list = list(set(url_list))
 
-    for url in url_list:
+    # Чтобы исключить дубликаты и не сломать словари, делаем фильтрацию по уникальным URL
+    seen_urls = set()
+    unique_items = []
+    for item in google_news_items:
+        if item['url'] not in seen_urls:
+            seen_urls.add(item['url'])
+            unique_items.append(item)
+
+    # Проходим по уникальным элементам
+    for item in unique_items:
+        url = item['url']
+        rss_date = item['rss_date']
+
         if url.strip():
-            data = fetch_article(url.strip())
+            # Передаем в fetch_article и сам линк, и его запасную дату
+            data = fetch_article(url.strip(), rss_date=rss_date)
             if data:
                 articles.append(data)
+
     print(f" ✅ Собрано {len(articles)} статей")
     return articles

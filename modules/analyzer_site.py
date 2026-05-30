@@ -94,16 +94,11 @@ def analyze_domain(domain):
     return features
 
 
-def compute_reliability_score(features, domain): # <--- ДОБАВИЛИ параметр domain
+def compute_reliability_score(features, _domain=None): # <--- ДОБАВИЛИ параметр domain
     """
     Вычисляет рейтинг надежности (1-5) на основе признаков
     """
-    score = 1  # базовый балл
-
-    # --- НОВЫЙ БЛОК: Бонус за принадлежность к Байнету ---
-    if domain.endswith('.by') or domain.endswith('.бел'):
-        score += 1
-    # ---------------------------------------------------
+    score = 0  # базовый балл
 
     if features['has_https']:
         score += 1
