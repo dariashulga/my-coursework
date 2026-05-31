@@ -53,7 +53,7 @@
 
 1. Клонирование репозитория
 Разверните проект в локальную папку на вашем компьютере:
-git clone https://github.com/dariashulga/my-course_project
+git clone https://github.com/dariashulga/my-coursework
 cd repo
 
 2. Установка зависимостей
