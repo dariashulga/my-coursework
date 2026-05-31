@@ -16,7 +16,6 @@ from selenium.webdriver.support import expected_conditions as EC
 
 
 def get_selenium_driver():
-    """Настройка невидимого браузера Chrome"""
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
@@ -32,8 +31,6 @@ def get_selenium_driver():
 def parse_rss_date(pub_date_str):
     """Конвертирует дату из формата Google RSS (RFC 822) в привычный datetime"""
     try:
-        # Пример: "Fri, 29 May 2026 09:21:00 GMT"
-        # Убираем возможные лишние пробелы
         pub_date_str = pub_date_str.strip()
         return datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S %Z")
     except:
@@ -52,7 +49,7 @@ def decode_urls_with_selenium(google_news_items, max_results=None):
     if not google_news_items:
         return []
 
-    print(f"🌐 Запуск браузера для дешифровки...")
+    print(f" Запуск браузера для дешифровки...")
     driver = get_selenium_driver()
     decoded_list = []
     consent_accepted = False
@@ -63,7 +60,7 @@ def decode_urls_with_selenium(google_news_items, max_results=None):
             rss_date = item['rss_date']
 
             if max_results and len(decoded_list) >= max_results:
-                print(f"🎯 Достигнут лимит в {max_results} успешных ссылок.")
+                print(f" Достигнут лимит в {max_results} успешных ссылок.")
                 break
 
             try:
@@ -77,7 +74,7 @@ def decode_urls_with_selenium(google_news_items, max_results=None):
                         )
                         consent_button.click()
                         consent_accepted = True
-                        print("✅ Окно согласия Google закрыто.")
+                        print(" Окно согласия Google закрыто.")
                         time.sleep(1)
                     except:
                         pass
@@ -90,7 +87,7 @@ def decode_urls_with_selenium(google_news_items, max_results=None):
                     if "news.google.com" not in final_url:
                         # СОХРАНЯЕМ В СПИСОК И ССЫЛКУ, И ДАТУ ИЗ RSS
                         decoded_list.append({'url': final_url, 'rss_date': rss_date})
-                        print(f"🔗 Раскрыто ({len(decoded_list)}): {final_url}")
+                        print(f" Раскрыто ({len(decoded_list)}): {final_url}")
                 except TimeoutException:
                     current = driver.current_url
                     if "google.com" not in current:
@@ -101,7 +98,7 @@ def decode_urls_with_selenium(google_news_items, max_results=None):
             except BaseException as e:
                 err_name = type(e).__name__
                 if err_name == "ScriptRunnerStopException" or err_name == "StopException":
-                    print("🛑 Пользователь принудительно остановил выполнение в Streamlit! Выходим...")
+                    print(" Пользователь принудительно остановил выполнение в Streamlit! Выходим...")
                     raise e
 
                 err_msg = str(e)
@@ -114,7 +111,7 @@ def decode_urls_with_selenium(google_news_items, max_results=None):
     finally:
         try:
             driver.quit()
-            print("🧹 Процесс браузера успешно очищен и закрыт.")
+            print(" Процесс браузера успешно очищен и закрыт.")
         except:
             pass
 
@@ -125,12 +122,12 @@ def search_news_by_keyword(keyword, start_date=None, end_date=None, max_results=
     query = keyword
 
     if start_date and end_date:
-        print(f"📡 Строгий поиск в Google RSS для фразы: '{keyword}' в диапазоне с {start_date} по {end_date}")
+        print(f" Строгий поиск в Google RSS для фразы: '{keyword}' в диапазоне с {start_date} по {end_date}")
         start_str = start_date.strftime('%Y-%m-%d')
         end_str = end_date.strftime('%Y-%m-%d')
         query = f"{keyword} after:{start_str} before:{end_str}"
     else:
-        print(f"📡 Запрос к Google RSS для фразы: '{keyword}' за всё время (глубокий поиск)")
+        print(f" Запрос к Google RSS для фразы: '{keyword}' за всё время (глубокий поиск)")
 
     encoded_query = quote(query)
     rss_url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ru&gl=BY&ceid=BY:ru"
@@ -149,7 +146,6 @@ def search_news_by_keyword(keyword, start_date=None, end_date=None, max_results=
             link_txt = item.find('link').text
             pub_date_txt = item.find('pubDate').text
 
-            # Парсим дату в формат datetime объекта
             parsed_date = parse_rss_date(pub_date_txt)
 
             google_news_items.append({
@@ -157,7 +153,7 @@ def search_news_by_keyword(keyword, start_date=None, end_date=None, max_results=
                 'rss_date': parsed_date
             })
 
-        print(f"🔄 Найдено {len(google_news_items)} сырых ссылок в RSS.")
+        print(f" Найдено {len(google_news_items)} сырых ссылок в RSS.")
 
         # Передаем структурированный список в дешифратор
         return decode_urls_with_selenium(google_news_items, max_results=max_results)
@@ -170,17 +166,14 @@ def search_news_in_yandex(keyword, start_date=None, end_date=None, max_results=N
     """Поиск новостей через RSS Яндекса с фильтрацией по датам"""
     query = keyword
 
-    # ЕСЛИ ДАТЫ ПЕРЕДАНЫ, ФОРМИРУЕМ ДИАПАЗОН ДЛЯ ЯНДЕКСА
     if start_date and end_date:
-        # Яндекс требует формат YYYYMMDD (например, 20260522)
         start_str = start_date.strftime('%Y%m%d')
         end_str = end_date.strftime('%Y%m%d')
 
-        # Оператор диапазона дат в Яндексе пишется через две точки
         query = f"{keyword} date:{start_str}..{end_str}"
-        print(f"📡 Строгий поиск в Яндекс RSS для фразы: '{keyword}' в диапазоне {start_str}..{end_str}")
+        print(f" Строгий поиск в Яндекс RSS для фразы: '{keyword}' в диапазоне {start_str}..{end_str}")
     else:
-        print(f"📡 Запрос к Яндекс RSS для фразы: '{keyword}' за всё время")
+        print(f" Запрос к Яндекс RSS для фразы: '{keyword}' за всё время")
 
     encoded_query = quote(query)
     # Формируем поисковую RSS-ссылку Яндекса
@@ -200,7 +193,6 @@ def search_news_in_yandex(keyword, start_date=None, end_date=None, max_results=N
             link_txt = item.find('link').text
             pub_date_txt = item.find('pubDate').text
 
-            # Парсим дату (у Яндекса формат такой же RFC 822)
             parsed_date = parse_rss_date(pub_date_txt)
 
             yandex_news_items.append({
@@ -208,7 +200,7 @@ def search_news_in_yandex(keyword, start_date=None, end_date=None, max_results=N
                 'rss_date': parsed_date
             })
 
-        print(f"🔄 Найдено {len(yandex_news_items)} сырых ссылок в Яндекс RSS.")
+        print(f" Найдено {len(yandex_news_items)} сырых ссылок в Яндекс RSS.")
 
         # Передаем ссылки в наш готовый дешифратор на Selenium
         return decode_urls_with_selenium(yandex_news_items, max_results=max_results)

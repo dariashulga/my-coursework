@@ -8,7 +8,6 @@ import os
 
 from config import DATABASE_PATH
 
-# Создаём папку, если её нет
 db_dir = os.path.dirname(DATABASE_PATH)
 if db_dir and not os.path.exists(db_dir):
     os.makedirs(db_dir)
@@ -20,7 +19,7 @@ class AnalysisResult(Base):
     __tablename__ = 'analysis_results'
 
     id = Column(Integer, primary_key=True)
-    url = Column(String, unique=True)  # ссылка уникальна
+    url = Column(String, unique=True)
     domain = Column(String)
     title = Column(String)
     date = Column(DateTime)
@@ -28,29 +27,22 @@ class AnalysisResult(Base):
     uniqueness_score = Column(Float, default=0.0)
     is_original_source = Column(Boolean, default=False)
     analysis_date = Column(DateTime, default=datetime.now)
-    keyword = Column(String, nullable=True)  # по какому запросу найдено (опционально)
+    keyword = Column(String, nullable=True)
 
-
-# Движок и сессия
 engine = create_engine(f'sqlite:///{DATABASE_PATH}', echo=False)
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 
-
-# --- Функции для работы с БД ---
 def save_analysis_result(article_data):
-    """Сохраняет или обновляет результат анализа одной статьи"""
     session = Session()
     try:
         existing = session.query(AnalysisResult).filter_by(url=article_data['url']).first()
         if existing:
-            # Обновляем существующую запись
             existing.reliability_score = article_data['reliability_score']
             existing.uniqueness_score = article_data['uniqueness_score']
             existing.is_original_source = article_data.get('is_original_source', False)
             existing.analysis_date = datetime.now()
         else:
-            # Добавляем новую
             result = AnalysisResult(
                 url=article_data['url'],
                 domain=article_data['domain'],
@@ -71,7 +63,6 @@ def save_analysis_result(article_data):
 
 
 def get_all_results():
-    """Возвращает все записи из БД"""
     session = Session()
     results = session.query(AnalysisResult).all()
     session.close()
@@ -79,7 +70,6 @@ def get_all_results():
 
 
 def get_original_source_for_topic(keyword=None):
-    """Возвращает запись, где is_original_source = True (по заданному keyword)"""
     session = Session()
     query = session.query(AnalysisResult).filter_by(is_original_source=True)
     if keyword:
@@ -90,7 +80,6 @@ def get_original_source_for_topic(keyword=None):
 
 
 def delete_all_results():
-    """Очищает таблицу (полезно для тестов)"""
     session = Session()
     try:
         session.query(AnalysisResult).delete()

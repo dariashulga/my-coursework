@@ -17,7 +17,6 @@ from config import REQUEST_TIMEOUT, USER_AGENT
 
 
 def extract_date_from_html(html, url):
-    """ (Твой код без изменений) """
     if not html:
         return None
     soup = BeautifulSoup(html, 'html.parser')
@@ -51,19 +50,17 @@ def extract_date_from_html(html, url):
     return None
 
 
-def fetch_article(url, rss_date=None):  # <-- ДОБАВИЛИ rss_date КАК НЕОБЯЗАТЕЛЬНЫЙ ПАРАМЕТР
+def fetch_article(url, rss_date=None):
     if "news.google.com" in url:
-        print(f" 🔗 Обнаружена ссылка Google News, декодируем через экстренный метод...")
+        print(f" Обнаружена ссылка Google News, декодируем через экстренный метод...")
 
-    print(f" 📥 Загрузка: {url}")
+    print(f" Загрузка: {url}")
 
     try:
-        # 1. Настройка "личности" браузера
         config = Config()
         config.browser_user_agent = USER_AGENT
         config.request_timeout = REQUEST_TIMEOUT
 
-        # 2. Пробуем загрузить через newspaper3k
         article = Article(url, config=config)
         article.download()
         article.parse()
@@ -72,14 +69,12 @@ def fetch_article(url, rss_date=None):  # <-- ДОБАВИЛИ rss_date КАК �
         text = article.text
         date = article.publish_date
 
-        # 3. Если newspaper не справился, зовем trafilatura
         if not text or len(text) < 300:
             print(f"   ⚠️ Мало текста через newspaper, пробую trafilatura...")
             downloaded = trafilatura.fetch_url(url)
             if downloaded:
                 text = trafilatura.extract(downloaded)
 
-        # 4. Поиск даты в HTML вручную (если newspaper выдал None)
         if not date or (date and date.date() == datetime.now().date()):
             try:
                 resp = requests.get(url, timeout=REQUEST_TIMEOUT,
@@ -91,24 +86,20 @@ def fetch_article(url, rss_date=None):  # <-- ДОБАВИЛИ rss_date КАК �
             except:
                 pass
 
-        # 5. --- НАШ УМНЫЙ КОСТЫЛЬ (FALLBACK) ДЛЯ ДАТЫ ---
-        # Если дата ВСЁ ЕЩЕ None (newspaper и ручной поиск по HTML провалились)
         if date is None and rss_date is not None:
             date = rss_date
-            print(f"   ℹ️ Дата для {urlparse(url).netloc} взята из Google News RSS (Fallback)")
-        # ------------------------------------------------
+            print(f" Дата для {urlparse(url).netloc} взята из Google News RSS (Fallback)")
 
-        # 6. Извлекаем домен
+        # Извлекаем домен
         domain = urlparse(url).netloc
         if domain.startswith('www.'):
             domain = domain[4:]
 
-        # 7. Финальная проверка объема текста
+        #  Финальная проверка объема текста
         if not text or len(text) < 200:
             print(f"   ❌ Слишком мало данных: {url}")
             return None
 
-        # Пауза вежливости
         time.sleep(1)
 
         # Убираем часовой пояс для совместимости с базой данных/анализом
@@ -133,12 +124,8 @@ def fetch_article(url, rss_date=None):  # <-- ДОБАВИЛИ rss_date КАК �
 
 
 def collect_articles_from_urls(google_news_items):
-    """
-    Принимает список словарей [{'url': ..., 'rss_date': ...}] из измененного news_search.py
-    """
     articles = []
 
-    # Чтобы исключить дубликаты и не сломать словари, делаем фильтрацию по уникальным URL
     seen_urls = set()
     unique_items = []
     for item in google_news_items:
@@ -146,7 +133,6 @@ def collect_articles_from_urls(google_news_items):
             seen_urls.add(item['url'])
             unique_items.append(item)
 
-    # Проходим по уникальным элементам
     for item in unique_items:
         url = item['url']
         rss_date = item['rss_date']
@@ -157,5 +143,5 @@ def collect_articles_from_urls(google_news_items):
             if data:
                 articles.append(data)
 
-    print(f" ✅ Собрано {len(articles)} статей")
+    print(f" Собрано {len(articles)} статей")
     return articles

@@ -1,7 +1,10 @@
-# main.py
 import sys
-from modules.news_search import search_news_by_keyword, decode_urls_with_selenium
-from modules.collector import collect_articles_from_urls  # используем актуальную функцию из твоего коллектора
+import os
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from modules.news_search import search_news_by_keyword, search_news_in_yandex
+from modules.collector import collect_articles_from_urls
 from modules.analyzer_site import analyze_and_rate_domains
 from modules.analyzer_text import analyze_texts
 from modules.aggregator import find_original_source
@@ -10,79 +13,84 @@ from modules.database import save_analysis_result
 
 def main():
     print("=" * 60)
-    print("🚀 OSINT-SYSTEM: ПОИСК ПЕРВОИСТОЧНИКА (Console Version)")
+    print(" OSINT-SYSTEM: ПОИСК ПЕРВОИСТОЧНИКА (Console Version)")
     print("=" * 60)
 
-    # 1. Ввод поискового запроса
-    query = input("\n🔎 Введите тему для расследования (например, '9 мая Гродно'): ").strip()
+    query = input("\n Введите тему для расследования (например, 'последний звонок Гродно'): ").strip()
     if not query:
-        print("❌ Ошибка: пустой запрос.")
+        print(" Ошибка: пустой запрос.")
         return
 
-    # 2. Поиск через RSS (Google News)
-    print(f"\n📡 Шаг 1/5: Поиск в Google News RSS...")
-    raw_urls = search_news_by_keyword(query)
-    print(f"✅ Найдено зашифрованных ссылок: {len(raw_urls)}")
+    # Сбор данных из двух поисковых систем (Google + Яндекс)
+    print(f"\n Шаг 1/4: Поиск и автоматическая дешифровка ссылок...")
 
-    if not raw_urls:
-        print("❌ Ничего не найдено.")
+    print(" Сканирование Google News RSS...")
+    google_res = search_news_by_keyword(query)
+    print(f"   Найдено и раскрыто через Google: {len(google_res)} ссылок.")
+
+    print(" Сканирование Яндекс RSS...")
+    yandex_res = search_news_in_yandex(query)
+    print(f"   Найдено и раскрыто через Яндекс: {len(yandex_res)} ссылок.")
+
+    combined_items = google_res + yandex_res
+    print(f" Всего уникальных сырых объектов для анализа: {len(combined_items)}")
+
+    if not combined_items:
+        print(" ️ Ничего не найдено ни в одном из источников.")
         return
 
-    # 3. Дешифровка через Selenium (Твой «взломщик» Google)
-    print(f"\n🌐 Шаг 2/5: Дешифровка ссылок через Selenium (может занять время)...")
-    clean_urls = decode_urls_with_selenium(raw_urls)
-    print(f"✅ Раскрыто реальных адресов: {len(clean_urls)}")
-
-    if not clean_urls:
-        print("❌ Не удалось раскрыть ни одной ссылки.")
-        return
-
-    # 4. Сбор контента (Текст, заголовки, даты)
-    print(f"\n📥 Шаг 3/5: Загрузка текстов статей...")
-    articles = collect_articles_from_urls(clean_urls)
-    print(f"✅ Успешно загружено статей: {len(articles)}")
+    print(f"\n Шаг 2/4: Загрузка контента и извлечение метаданных статей...")
+    articles = collect_articles_from_urls(combined_items)
+    print(f" Успешно загружено и очищено статей: {len(articles)}")
 
     if not articles:
-        print("❌ Не удалось получить текст статей.")
+        print(" Не удалось получить валидный текст статей для анализа.")
         return
 
-    # 5. Анализ (Сайты + Текст)
-    print(f"\n⚖️ Шаг 4/5: Анализ надежности и уникальности...")
+    print(f"\n Шаг 3/4: Экспертная оценка надежности доменов и уникальности текстов...")
 
-    # Считаем рейтинг доменов
     domain_scores = analyze_and_rate_domains(articles)
     for art in articles:
         art['reliability_score'] = domain_scores.get(art['domain'], 1)
 
-    # Считаем уникальность через ML
     articles = analyze_texts(articles)
 
-    # 6. Финал: Поиск победителя
-    print(f"\n🏆 Шаг 5/5: Определение первоисточника...")
+    print(f"\n Шаг 4/4: Математическое определение первоисточника...")
     winner, reason = find_original_source(articles)
 
-    # Сохраняем результат в базу (в папку data)
     for art in articles:
-        is_winner = (art['url'] == winner['url'])
-        save_analysis_result(art, query, is_winner)
+        is_original = (art['url'] == winner['url'])
+        result_data = {
+            'url': art['url'],
+            'domain': art['domain'],
+            'title': art['title'],
+            'date': art['date'],
+            'reliability_score': art['reliability_score'],
+            'uniqueness_score': art['unique_score'],
+            'is_original_source': is_original,
+            'keyword': query
+        }
+        save_analysis_result(result_data)
 
-    # ВЫВОД РЕЗУЛЬТАТОВ
-    print("\n" + "⭐" * 60)
-    print("ИТОГОВОЕ ЗАКЛЮЧЕНИЕ")
-    print("⭐" * 60)
-    print(f"ПОБЕДИТЕЛЬ: {winner['title']}")
-    print(f"ИСТОЧНИК:  {winner['domain']}")
-    print(f"ДАТА:      {winner['date']}")
-    print(f"УНИКАЛЬНОСТЬ: {winner.get('unique_score', 0):.2f}")
-    print(f"РЕЙТИНГ:   {winner['reliability_score']}/5")
-    print(f"\nВЕРДИКТ: {reason}")
+    print("\n" + "=" * 60)
+    print(" ИТОВЫЙ ВЕРДИКТ OSINT-РАССЛЕДОВАНИЯ")
     print("=" * 60)
-    print("✅ Данные сохранены в базу data/news.db")
+    print(f" ПЕРВОИСТОЧНИК: {winner['title']}")
+    print(f" URL:          {winner['url']}")
+    print(f" ДОМЕН:        {winner['domain']}")
+
+    date_str = winner['date'].strftime('%d.%m.%Y %H:%M') if winner['date'] else "неизвестна"
+    print(f" ДАТА ПУБЛ.:   {date_str}")
+    print(f" УНИКАЛЬНОСТЬ: {winner.get('unique_score', 0.0):.2f}")
+    print(f" НАДЕЖНОСТЬ:   {winner['reliability_score']}/5")
+    print(f"\n ОБОСНОВАНИЕ СИСТЕМЫ:\n_{reason}_")
+    print("=" * 60)
+    print(" Все результаты успешно залогированы в базу данных data/news.db")
 
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\nПрервано пользователем.")
+        print("\n Программа принудительно остановлена пользователем.")
         sys.exit()

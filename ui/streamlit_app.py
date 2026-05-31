@@ -15,7 +15,6 @@ from modules.analyzer_text import analyze_texts
 from modules.aggregator import find_original_source
 from modules.news_search import search_news_by_keyword, search_news_in_yandex
 
-# Настройка страницы
 st.set_page_config(
     page_title="Поиск первоисточника новостей",
     page_icon="📰",
@@ -64,10 +63,9 @@ with st.sidebar:
             else:
                 st.warning("Пожалуйста, введите ссылки в поле или загрузите .txt файл.")
 
-    else:  # Ключевое слово
+    else:
         keyword = st.text_input("Введите ключевую фразу для поиска:", key="keyword_input")
 
-        # --- ВОЗВРАЩАЕМ КЛАССИЧЕСКИЙ ВЫБОР БЕЗ TG ---
         search_engine = st.radio(
             "Поисковая система:",
             ["Google News", "Яндекс Поиск", "Искать везде (Google + Яндекс)"]
@@ -87,9 +85,9 @@ with st.sidebar:
             if delta_days <= 0:
                 delta_days = 1
         else:
-            st.caption("ℹ️ Поиск будет выполнен по всему доступному архиву.")
+            st.caption(" Поиск будет выполнен по всему доступному архиву.")
 
-        st.markdown("### 🔢 Количество ссылок")
+        st.markdown("### Количество ссылок")
         limit_mode = st.radio(
             "Сколько новостей обработать?",
             ["Найти абсолютно все", "Задать точный лимит"]
@@ -120,7 +118,6 @@ with st.sidebar:
 
                     found_urls = []
 
-                    # ЛОГИКА ПОИСКА БЕЗ ТЕЛЕГРАМА
                     if search_engine == "Google News":
                         found_urls = search_news_by_keyword(keyword, start_date=g_start, end_date=g_end,
                                                             max_results=max_links)
@@ -153,7 +150,7 @@ with st.sidebar:
     use_ml = st.checkbox("Использовать ML для анализа текста", value=True)
     os.environ['USE_ML_FOR_TEXT'] = 'True' if use_ml else 'False'
 
-# --- Логика анализа и вкладок отображения результатов ---
+#   Логика анализа и вкладок отображения результатов
 if 'run_analysis' in st.session_state and st.session_state['run_analysis']:
     with st.spinner(" Сбор и анализ статей..."):
         articles = collect_articles_from_urls(st.session_state['urls'])
@@ -258,7 +255,7 @@ if 'articles' in st.session_state:
             file_name = f"osint_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
 
             st.download_button(
-                label="📥 Скачать отчет об анализе в JSON",
+                label=" Скачать отчет об анализе в JSON",
                 data=json_string,
                 file_name=file_name,
                 mime="application/json",

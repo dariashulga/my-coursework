@@ -1,0 +1,43 @@
+# Среда разработки (PyCharm)
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Виртуальное окружение Python
+.venv/
+venv/
+ENV/
+env/
+bin/
+include/
+lib/
+share/
+
+# Кэш Python и компилированные файлы
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Локальные базы данных (скрываем рабочую БД, чтобы на гитхабе репозиторий был чистым)
+data/news.db
+*.db
+*.sqlite3
+
+# Файлы сессий Telegram (на случай, если где-то завалялись скрытые копии)
+*.session
+*.session-journal
+
+# Системные файлы ОС
+.DS_Store
+Thumbs.db
+
+# Логи и временные файлы отладки/капчи
+*.log
+*.png
+*.jpg
+*.jpeg

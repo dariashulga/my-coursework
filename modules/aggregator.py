@@ -8,38 +8,26 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 
 def make_timezone_naive(dt):
-    """
-    Преобразует дату с часовым поясом в дату без часового пояса (UTC)
-    """
     if dt is None:
         return None
     if dt.tzinfo is not None:
-        # Если дата с часовым поясом, преобразуем в UTC и убираем tzinfo
         return dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt
 
 
 def find_original_source(articles):
-    """
-    Находит первоисточник среди списка статей
-    Правила: 1. Самая ранняя дата
-             2. При равных датах - выше рейтинг
-             3. При равных дате и рейтинге - больше уникальность
-    """
     if not articles:
         return None, "Нет статей для анализа"
 
     # Подготавливаем статьи: нормализуем даты и фильтруем
     valid_articles = []
     for art in articles:
-        # Нормализуем дату
         date_normalized = make_timezone_naive(art.get('date'))
 
         # Проверяем наличие необходимых полей
         if (date_normalized is not None and
                 art.get('reliability_score') is not None and
                 art.get('unique_score') is not None):
-            # Создаем копию с нормализованной датой
             art_copy = art.copy()
             art_copy['date'] = date_normalized
             valid_articles.append(art_copy)
@@ -60,7 +48,6 @@ def find_original_source(articles):
     without_date = [a for a in valid_articles if a['date'] is None]
 
     if with_date:
-        # Сортировка по дате (от ранней к поздней)
         sorted_by_date = sorted(with_date, key=lambda x: x['date'])
 
         # Группируем по дате (по году-месяцу-дно)
