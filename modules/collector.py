@@ -51,6 +51,11 @@ def extract_date_from_html(html, url):
 
 
 def fetch_article(url, rss_date=None):
+    domain_lower = urlparse(url).netloc.lower()
+    if any(video_service in domain_lower for video_service in ['youtube.com', 'youtu.be', 'vk.com', 'rutube.ru']):
+        print(f"   Пропускаем видеохостинг/соцсеть: {urlparse(url).netloc}")
+        return None
+
     if "news.google.com" in url:
         print(f" Обнаружена ссылка Google News, декодируем через экстренный метод...")
 
@@ -95,14 +100,17 @@ def fetch_article(url, rss_date=None):
         if domain.startswith('www.'):
             domain = domain[4:]
 
-        #  Финальная проверка объема текста
-        if not text or len(text) < 200:
-            print(f"   ❌ Слишком мало данных: {url}")
-            return None
+            # финальная проверка объема текста
+        if not text or len(str(text).strip()) < 30:
+            if title and title != 'Без заголовка':
+                text = f"Заголовок: {title}. Текст публикации слишком короткий для семантического анализа."
+                print(f"   Короткая статья/заметка сохранена по заголовку: {domain}")
+            else:
+                print(f"   ❌ Слишком мало данных, пропускаем: {url}")
+                return None
 
         time.sleep(1)
 
-        # Убираем часовой пояс для совместимости с базой данных/анализом
         if date and hasattr(date, 'tzinfo') and date.tzinfo is not None:
             date = date.replace(tzinfo=None)
 
@@ -138,7 +146,6 @@ def collect_articles_from_urls(google_news_items):
         rss_date = item['rss_date']
 
         if url.strip():
-            # Передаем в fetch_article и сам линк, и его запасную дату
             data = fetch_article(url.strip(), rss_date=rss_date)
             if data:
                 articles.append(data)

@@ -14,6 +14,8 @@ from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.support import expected_conditions as EC
 
+import os
+
 
 def get_selenium_driver():
     chrome_options = Options()
@@ -21,15 +23,28 @@ def get_selenium_driver():
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
+
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=chrome_options)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(current_dir)
+    bot_profile_path = os.path.join(project_root, "data", "bot_chrome_profile")
 
+    chrome_options.add_argument(f"--user-data-dir={bot_profile_path}")
+    chrome_options.add_argument("--profile-directory=BotProfile")
+
+    try:
+        service = Service(ChromeDriverManager().install())
+        return webdriver.Chrome(service=service, options=chrome_options)
+    except Exception as e:
+        print(f"⚠️ Ошибка изолированного браузера ({e}), запускаю чистый headless...")
+        fallback_options = Options()
+        fallback_options.add_argument("--headless")
+        fallback_options.add_argument("--no-sandbox")
+        return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=fallback_options)
 
 def parse_rss_date(pub_date_str):
-    """Конвертирует дату из формата Google RSS (RFC 822) в привычный datetime"""
     try:
         pub_date_str = pub_date_str.strip()
         return datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S %Z")
@@ -42,10 +57,6 @@ def parse_rss_date(pub_date_str):
 
 
 def decode_urls_with_selenium(google_news_items, max_results=None):
-    """
-    Принимает список словарей [{'url': ..., 'rss_date': ...}]
-    Возвращает список словарей с расшифрованными URL и сохраненной датой из RSS
-    """
     if not google_news_items:
         return []
 
@@ -93,7 +104,7 @@ def decode_urls_with_selenium(google_news_items, max_results=None):
                     if "google.com" not in current:
                         decoded_list.append({'url': current, 'rss_date': rss_date})
                     else:
-                        print(f"⚠️ Не удалось пробиться через: {url[:50]}...")
+                        print(f" Не удалось пробиться через: {url[:50]}...")
 
             except BaseException as e:
                 err_name = type(e).__name__
@@ -103,7 +114,7 @@ def decode_urls_with_selenium(google_news_items, max_results=None):
 
                 err_msg = str(e)
                 if any(marker in err_msg for marker in ["localhost", "10061", "Max retries exceeded"]):
-                    print("💀 Связь с браузером потеряна (Streamlit был остановлен). Прерываем цикл.")
+                    print(" Связь с браузером потеряна (Streamlit был остановлен). Прерываем цикл.")
                     break
 
                 print(f"❌ Ошибка на ссылке: {e}")
@@ -163,50 +174,64 @@ def search_news_by_keyword(keyword, start_date=None, end_date=None, max_results=
 
 
 def search_news_in_yandex(keyword, start_date=None, end_date=None, max_results=None):
-    """Поиск новостей через RSS Яндекса с фильтрацией по датам"""
     query = keyword
-
-    if start_date and end_date:
-        start_str = start_date.strftime('%Y%m%d')
-        end_str = end_date.strftime('%Y%m%d')
-
-        query = f"{keyword} date:{start_str}..{end_str}"
-        print(f" Строгий поиск в Яндекс RSS для фразы: '{keyword}' в диапазоне {start_str}..{end_str}")
-    else:
-        print(f" Запрос к Яндекс RSS для фразы: '{keyword}' за всё время")
+    print(f" Запрос к Яндекс Поиску для фразы: '{keyword}'")
 
     encoded_query = quote(query)
-    # Формируем поисковую RSS-ссылку Яндекса
-    rss_url = f"https://yandex.by/search/rss?text={encoded_query}&lr=157"  # lr=157 — это регион Минск/Беларусь
+    # Используем URL обычного веб-поиска, так как он открывается у тебя идеально!
+    web_url = f"https://yandex.by/search/?text={encoded_query}&lr=157"
 
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    driver = get_selenium_driver()
+    yandex_news_items = []
+
     try:
-        response = requests.get(rss_url, headers=headers, timeout=15)
-        if response.status_code != 200:
-            print(f"⚠️ Яндекс вернул код ответа: {response.status_code}")
+        driver.get(web_url)
+        time.sleep(4)
+
+        page_source = driver.page_source.lower()
+        if "captcha" in page_source or "робот" in page_source:
+            print(" Яндекс заблокировал запрос капчей. Пропускаем.")
             return []
 
-        root = ET.fromstring(response.content)
+        elements = driver.find_elements(By.TAG_NAME, "a")
 
-        yandex_news_items = []
-        for item in root.findall('.//item'):
-            link_txt = item.find('link').text
-            pub_date_txt = item.find('pubDate').text
+        seen_urls = set()
+        for elem in elements:
+            try:
+                url = elem.get_attribute("href")
+                if not url:
+                    continue
 
-            parsed_date = parse_rss_date(pub_date_txt)
+                if "yandex." in url or "ya.ru" in url or "pasport" in url or "viber" in url or "telegram" in url:
+                    continue
 
-            yandex_news_items.append({
-                'url': link_txt,
-                'rss_date': parsed_date
-            })
+                if url not in seen_urls and (url.startswith("http://") or url.startswith("https://")):
+                    seen_urls.add(url)
 
-        print(f" Найдено {len(yandex_news_items)} сырых ссылок в Яндекс RSS.")
 
-        # Передаем ссылки в наш готовый дешифратор на Selenium
-        return decode_urls_with_selenium(yandex_news_items, max_results=max_results)
+                    yandex_news_items.append({
+                        'url': url,
+                        'rss_date': datetime.now()
+                    })
+            except:
+                continue
+
+        print(f" Извлечено {len(yandex_news_items)} уникальных ссылок из выдачи Яндекса.")
+
+        if max_results:
+            yandex_news_items = yandex_news_items[:max_results]
+
+        return yandex_news_items
+
     except Exception as e:
-        print(f"❌ Ошибка Яндекс RSS: {e}")
+        print(f"❌ Ошибка при сборе данных из Яндекса: {e}")
         return []
+    finally:
+        try:
+            driver.quit()
+            print(" Браузер Яндекса успешно закрыт.")
+        except:
+            pass
 
 def decode_google_news_url():
     return None

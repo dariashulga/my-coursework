@@ -15,6 +15,12 @@ from modules.analyzer_text import analyze_texts
 from modules.aggregator import find_original_source
 from modules.news_search import search_news_by_keyword, search_news_in_yandex
 
+import logging
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning)
+logging.getLogger("transformers").setLevel(logging.ERROR)
+
 st.set_page_config(
     page_title="Поиск первоисточника новостей",
     page_icon="📰",
@@ -71,7 +77,7 @@ with st.sidebar:
             ["Google News", "Яндекс Поиск", "Искать везде (Google + Яндекс)"]
         )
 
-        st.markdown("### 📅 Период поиска")
+        st.markdown("### Период поиска")
         all_time = st.checkbox("Искать за всё время (без привязки к датам)", value=False)
 
         delta_days = None
@@ -103,7 +109,7 @@ with st.sidebar:
                 step=1
             )
 
-        if st.button("🔍 Найти и проанализировать", type="primary"):
+        if st.button(" Найти и проанализировать", type="primary"):
             if keyword:
                 with st.spinner("Поиск и дешифровка статей..."):
 
@@ -127,11 +133,11 @@ with st.sidebar:
                                                            max_results=max_links)
 
                     elif search_engine == "Искать везде (Google + Яндекс)":
-                        st.text("🔎 Сбор данных из Google...")
+                        st.text(" Сбор данных из Google...")
                         google_res = search_news_by_keyword(keyword, start_date=g_start, end_date=g_end,
                                                             max_results=max_links)
 
-                        st.text("🔎 Сбор данных из Яндекса...")
+                        st.text(" Сбор данных из Яндекса...")
                         yandex_res = search_news_in_yandex(keyword, start_date=y_start, end_date=y_end,
                                                            max_results=max_links)
 
@@ -221,7 +227,7 @@ if 'articles' in st.session_state:
 
             # --- НАША КНОПКА СКАЧИВАНИЯ JSON (СОХРАНЕНА!) ---
             st.markdown("---")
-            st.subheader("💾 Экспорт результатов")
+            st.subheader(" Экспорт результатов")
 
             export_data = {
                 "analysis_date": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),

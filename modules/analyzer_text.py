@@ -1,9 +1,20 @@
 # modules/analyzer_text.py
 
+import os
+import logging
+import warnings
+
+# Глушим системные предупреждения Windows, HuggingFace и PyTorch
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+warnings.filterwarnings("ignore", category=UserWarning)
+logging.getLogger("transformers").setLevel(logging.ERROR)
+
+from transformers.utils import logging as transformers_logging
+transformers_logging.set_verbosity_error()
+
 import nltk
 from nltk.tokenize import sent_tokenize
 import sys
-import os
 import numpy as np
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
