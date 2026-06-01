@@ -4,7 +4,7 @@ import os
 import logging
 import warnings
 
-# Глушим системные предупреждения Windows, HuggingFace и PyTorch
+# Блокирование избыточных системных логов библиотек HuggingFace и PyTorch до инициализации модулей
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 warnings.filterwarnings("ignore", category=UserWarning)
 logging.getLogger("transformers").setLevel(logging.ERROR)
@@ -24,6 +24,10 @@ _embedding_model = None
 
 
 def get_embedding_model():
+    """
+    Реализует паттерн Singleton для ленивой загрузки предобученной
+    трансформерной модели RuBERT-tiny2.
+    """
     global _embedding_model
     if _embedding_model is None and USE_ML_FOR_TEXT:
         try:
@@ -37,12 +41,17 @@ def get_embedding_model():
 
 
 def preprocess_sentences(text):
+    """
+    Выполняет токенизацию текста на предложения, очистку от пробельных символов
+    и приведение к нижнему регистру.
+    """
     if not text:
         return []
 
     try:
         sentences = sent_tokenize(text)
     except:
+        # Резервный метод разбиения текста при отсутствии nltk-ресурсов
         sentences = [s.strip() + '.' for s in text.split('.') if len(s.strip()) > 20]
 
     cleaned = []
@@ -54,6 +63,10 @@ def preprocess_sentences(text):
 
 
 def count_unique_sentences(articles_texts):
+    """
+    Алгоритм классического посимвольного сравнения предложений (Baseline-метод).
+    Вычисляет долю предложений, отсутствующих в других статьях.
+    """
     all_sentences = [preprocess_sentences(text) for text in articles_texts]
 
     unique_counts = []
@@ -70,10 +83,15 @@ def count_unique_sentences(articles_texts):
 
 
 def calculate_uniqueness_ml(articles_texts):
+    """
+    Рассчитывает коэффициент уникальности текста на основе косинусного сходства
+    векторных представлений (эмбеддингов), сгенерированных нейросетью.
+    """
     model = get_embedding_model()
     if model is None:
         return count_unique_sentences(articles_texts)
 
+    # Генерация векторных эмбеддингов для усеченных текстовых блоков
     embeddings = []
     for text in articles_texts:
         # Берём первые 2000 символов (достаточно для смысла)
@@ -81,6 +99,7 @@ def calculate_uniqueness_ml(articles_texts):
         emb = model.encode(truncated, normalize_embeddings=True)
         embeddings.append(emb)
 
+    # Вычисление взаимного косинусного сходства векторов (векторное подпространство)
     uniqueness = []
     for i, emb_i in enumerate(embeddings):
         similarities = []
@@ -95,6 +114,10 @@ def calculate_uniqueness_ml(articles_texts):
 
 
 def analyze_texts(articles):
+    """
+    Главная диспетчерская функция текстового анализа. Выбирает между ML-моделью
+    и строковым алгоритмом в зависимости от конфигурационных настроек.
+    """
     texts = [art['text'] for art in articles]
 
     if USE_ML_FOR_TEXT:

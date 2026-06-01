@@ -5,7 +5,7 @@ import pandas as pd
 import json
 from datetime import datetime, date
 
-# Добавляем путь к корневой папке проекта
+# Настройка системных путей для импорта внутренних модулей проекта
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from modules.collector import collect_articles_from_urls
@@ -18,6 +18,7 @@ from modules.news_search import search_news_by_keyword, search_news_in_yandex
 import logging
 import warnings
 
+# Блокирование предупреждений библиотек для предотвращения загрязнения логов интерфейса
 warnings.filterwarnings("ignore", category=UserWarning)
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
@@ -30,16 +31,18 @@ st.set_page_config(
 st.title(" Автоматизированный поиск первоисточника новостей")
 st.markdown("---")
 
+# --- БЛОК БОКОВОЙ ПАНЕЛИ УПРАВЛЕНИЯ ---
 with st.sidebar:
     st.header(" Ввод данных")
 
+    # Выбор режима работы программного комплекса
     input_method = st.radio(
         "Способ ввода:",
         ["Список URL", "Ключевое слово (поиск)"]
     )
 
+    # РЕЖИМ 1: Обработка готовых пользовательских ссылок
     if input_method == "Список URL":
-
         uploaded_file = st.file_uploader("Или загрузите TXT-файл со ссылками", type=["txt"])
 
         urls_text = st.text_area(
@@ -51,15 +54,18 @@ with st.sidebar:
         if st.button(" Загрузить и анализировать", type="primary"):
             final_urls = []
 
+            # Извлечение данных из загруженного текстового файла
             if uploaded_file is not None:
                 file_contents = uploaded_file.read().decode("utf-8")
                 file_urls = [line.strip() for line in file_contents.splitlines() if line.strip()]
                 final_urls.extend(file_urls)
 
+            # Извлечение данных из текстового поля ввода
             if urls_text:
                 text_urls = [line.strip() for line in urls_text.splitlines() if line.strip()]
                 final_urls.extend(text_urls)
 
+            # Фильтрация дубликатов URL-адресов
             final_urls = list(dict.fromkeys(final_urls))
 
             if final_urls:
@@ -69,6 +75,7 @@ with st.sidebar:
             else:
                 st.warning("Пожалуйста, введите ссылки в поле или загрузите .txt файл.")
 
+    # РЕЖИМ 2: Интеграция с поисковыми системами по ключевому запросу
     else:
         keyword = st.text_input("Введите ключевую фразу для поиска:", key="keyword_input")
 
@@ -82,6 +89,7 @@ with st.sidebar:
 
         delta_days = None
 
+        # Расчет временного интервала для поисковых запросов
         if not all_time:
             today = date.today()
             start_date = st.date_input("Начало периода:", today - pd.Timedelta(days=7), max_value=today)
@@ -109,10 +117,12 @@ with st.sidebar:
                 step=1
             )
 
+        # Обработка поисковых запросов и агрегация сырых ссылок
         if st.button(" Найти и проанализировать", type="primary"):
             if keyword:
                 with st.spinner("Поиск и дешифровка статей..."):
 
+                    # Форматирование дат под синтаксис конкретной поисковой системы
                     if all_time:
                         g_start, g_end = None, None
                         y_start, y_end = None, None
@@ -124,6 +134,7 @@ with st.sidebar:
 
                     found_urls = []
 
+                    # Ветвление запросов по выбранным поисковым шлюзам
                     if search_engine == "Google News":
                         found_urls = search_news_by_keyword(keyword, start_date=g_start, end_date=g_end,
                                                             max_results=max_links)
@@ -156,23 +167,30 @@ with st.sidebar:
     use_ml = st.checkbox("Использовать ML для анализа текста", value=True)
     os.environ['USE_ML_FOR_TEXT'] = 'True' if use_ml else 'False'
 
-#   Логика анализа и вкладок отображения результатов
+# --- КОНВЕЙЕР ОБРАБОТКИ И СЕМАНТИЧЕСКОГО АНАЛИЗА ДАННЫХ ---
 if 'run_analysis' in st.session_state and st.session_state['run_analysis']:
     with st.spinner(" Сбор и анализ статей..."):
+
+        # Краулинг контента и очистка HTML разметки
         articles = collect_articles_from_urls(st.session_state['urls'])
         if not articles:
             st.error("Не удалось загрузить ни одной статьи. Проверьте доступность ресурсов.")
             st.stop()
 
+        # Расчет рейтинга доверия (Reliability Score) для доменов
         domain_scores = analyze_and_rate_domains(articles)
         for art in articles:
             art['reliability_score'] = domain_scores.get(art['domain'], 1)
 
+        # Оценка семантической уникальности текстовых блоков (NLTK / RuBERT)
         articles = analyze_texts(articles)
+
+        # Агрегирующий математический выбор первоисточника
         winner, reason = find_original_source(articles)
 
         keyword_val = st.session_state.get('keyword_input') if input_method == "Ключевое слово (поиск)" else None
 
+        # Каскадное сохранение результатов в реляционную базу данных SQLite
         for art in articles:
             is_original = (art['url'] == winner['url'])
             result_data = {
@@ -187,12 +205,14 @@ if 'run_analysis' in st.session_state and st.session_state['run_analysis']:
             }
             save_analysis_result(result_data)
 
+        # Сохранение финального состояния в кэш сессии Streamlit
         st.session_state['articles'] = articles
         st.session_state['winner'] = winner
         st.session_state['reason'] = reason
         st.session_state['domain_scores'] = domain_scores
         st.session_state['run_analysis'] = False
 
+# --- БЛОК ОТОБРАЖЕНИЯ РЕЗУЛЬТАТОВ ---
 if 'articles' in st.session_state:
     articles = st.session_state['articles']
     winner = st.session_state['winner']
@@ -225,10 +245,10 @@ if 'articles' in st.session_state:
             with mcol3:
                 st.metric("Длина текста", f"{len(winner.get('text', ''))} симв.")
 
-            # --- НАША КНОПКА СКАЧИВАНИЯ JSON (СОХРАНЕНА!) ---
             st.markdown("---")
             st.subheader(" Экспорт результатов")
 
+            # Формирование структурированного словаря для сериализации в JSON-отчет
             export_data = {
                 "analysis_date": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
                 "method": input_method,

@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 
 def view_database():
+    """Выполняет прямое чтение и табличное форматирование исторических логов из СУБД."""
     conn = sqlite3.connect('data/news.db')
 
     query = "SELECT * FROM analysis_results"

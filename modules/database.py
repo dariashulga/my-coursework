@@ -8,6 +8,7 @@ import os
 
 from config import DATABASE_PATH
 
+# Динамическая инициализация локальной структуры директорий под файл базы данных
 db_dir = os.path.dirname(DATABASE_PATH)
 if db_dir and not os.path.exists(db_dir):
     os.makedirs(db_dir)
@@ -16,8 +17,11 @@ Base = declarative_base()
 
 
 class AnalysisResult(Base):
+    """
+    Декларативное описание схемы таблицы для хранения логов результатов
+    комплесного анализа новостных публикаций.
+    """
     __tablename__ = 'analysis_results'
-
     id = Column(Integer, primary_key=True)
     url = Column(String, unique=True)
     domain = Column(String)
@@ -29,11 +33,16 @@ class AnalysisResult(Base):
     analysis_date = Column(DateTime, default=datetime.now)
     keyword = Column(String, nullable=True)
 
+# Инициализация движка базы данных SQLite без дублирования отладочного логирования (echo=False)
 engine = create_engine(f'sqlite:///{DATABASE_PATH}', echo=False)
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
 
 def save_analysis_result(article_data):
+    """
+    Сохраняет новую запись или выполняет обновление (Upsert) существующих
+    метрик уникальности и надежности в базе данных.
+    """
     session = Session()
     try:
         existing = session.query(AnalysisResult).filter_by(url=article_data['url']).first()
@@ -63,6 +72,7 @@ def save_analysis_result(article_data):
 
 
 def get_all_results():
+    """Возвращает полный массив исторических данных анализа."""
     session = Session()
     results = session.query(AnalysisResult).all()
     session.close()
@@ -70,6 +80,7 @@ def get_all_results():
 
 
 def get_original_source_for_topic(keyword=None):
+    """Выполняет выборку зафиксированного первоисточника по целевому ключевому запросу."""
     session = Session()
     query = session.query(AnalysisResult).filter_by(is_original_source=True)
     if keyword:
@@ -80,6 +91,7 @@ def get_original_source_for_topic(keyword=None):
 
 
 def delete_all_results():
+    """Каскадное очищение таблицы результатов (используется для сброса состояния интерфейса)."""
     session = Session()
     try:
         session.query(AnalysisResult).delete()

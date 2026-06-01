@@ -12,6 +12,10 @@ from config import REQUEST_TIMEOUT, USER_AGENT
 
 
 def analyze_domain(domain):
+    """
+    Выполняет краулинг главной страницы домена и осуществляет поиск
+    структурных маркеров надежности веб-ресурса.
+    """
     print(f" Анализ домена: {domain}")
 
     features = {
@@ -25,8 +29,9 @@ def analyze_domain(domain):
     }
 
     urls_to_try = [f'https://{domain}', f'http://{domain}']
-
     html = None
+
+    # Попытка установить защищенное или незащищенное соединение с сервером
     for base_url in urls_to_try:
         try:
             resp = requests.get(base_url, timeout=REQUEST_TIMEOUT,
@@ -45,6 +50,7 @@ def analyze_domain(domain):
     soup = BeautifulSoup(html, 'html.parser')
     page_text = html.lower()
 
+    # Поиск ссылок на разделы обратной связи и информации о ресурсе
     for a in soup.find_all('a', href=True):
         href = a['href'].lower()
         link_text = a.get_text().lower()
@@ -54,12 +60,14 @@ def analyze_domain(domain):
         if any(word in href or word in link_text for word in ['contact', 'контакты', 'kontakt']):
             features['has_contact_page'] = True
 
+        # Подсчет исходящих внешних ссылок для оценки цитируемости ресурса
         full_url = urljoin(base_url, href)
         if full_url.startswith('http'):
             link_domain = urlparse(full_url).netloc
             if link_domain and link_domain != domain and not link_domain.startswith('www.' + domain):
                 features['external_links_count'] += 1
 
+    # Поиск лингвистических маркеров юридической информации
     legal_markers = ['юридический адрес', 'legal address', 'privacy policy',
                      'политика конфиденциальности', 'редакция', 'свидетельство о регистрации']
     for marker in legal_markers:
@@ -67,6 +75,7 @@ def analyze_domain(domain):
             features['has_legal_info'] = True
             break
 
+    # Поиск интеграций с социальными сетями и мессенджерами
     social_markers = ['vk.com', 'facebook.com', 'twitter.com', 't.me',
                       'telegram', 'youtube.com', 'ok.ru']
     for marker in social_markers:
@@ -74,17 +83,22 @@ def analyze_domain(domain):
             features['has_social_links'] = True
             break
 
+    # Проверка упоминания состава редакции или главного редактора
     editorial_markers = ['редакция', 'editorial', 'главный редактор', 'chief editor']
     for marker in editorial_markers:
         if marker in page_text:
             features['has_editorial_mention'] = True
             break
 
-    time.sleep(0.5)  # вежливость
+    time.sleep(0.5)
     return features
 
 
 def compute_reliability_score(features, _domain=None):
+    """
+    Рассчитывает финальный рейтинг доверия (весовой коэфициент от 1 до 5)
+    на основе агрегированных признаков веб-ресурса.
+    """
     score = 0
 
     if features['has_https']:
@@ -107,6 +121,9 @@ def compute_reliability_score(features, _domain=None):
 
 
 def analyze_and_rate_domains(articles):
+    """
+    Интерфейсная функция для групповой обработки и скоринга уникального пула доменов.
+    """
     domains = list(set(art['domain'] for art in articles))
     domain_scores = {}
 

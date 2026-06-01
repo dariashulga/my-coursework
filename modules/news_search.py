@@ -18,15 +18,19 @@ import os
 
 
 def get_selenium_driver():
+    """
+    Конфигурирует изолированный экземпляр браузера Chrome в режиме Headless
+    с персистентным профилем для обхода капчи и блокировок веб-ресурсов.
+    """
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
+    # Использование выделенной изолированной папки профиля для накопления Cookie-файлов бота
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(current_dir)
     bot_profile_path = os.path.join(project_root, "data", "bot_chrome_profile")
@@ -38,6 +42,7 @@ def get_selenium_driver():
         service = Service(ChromeDriverManager().install())
         return webdriver.Chrome(service=service, options=chrome_options)
     except Exception as e:
+        # Откат к полностью чистому экземпляру браузера в случае блокировок сессии
         print(f"⚠️ Ошибка изолированного браузера ({e}), запускаю чистый headless...")
         fallback_options = Options()
         fallback_options.add_argument("--headless")
@@ -45,18 +50,23 @@ def get_selenium_driver():
         return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=fallback_options)
 
 def parse_rss_date(pub_date_str):
+    """Преобразует строковое представление даты из формата RSS XML структуры в объект datetime."""
     try:
         pub_date_str = pub_date_str.strip()
         return datetime.strptime(pub_date_str, "%a, %d %b %Y %H:%M:%S %Z")
     except:
         try:
-            # Запасной вариант на случай другого формата часового пояса (например, +0300)
+            # Парсинг альтернативных представлений временных зон (сдвиг в часах)
             return datetime.strptime(pub_date_str[:25].strip(), "%a, %d %b %Y %H:%M:%S")
         except:
             return None
 
 
 def decode_urls_with_selenium(google_news_items, max_results=None):
+    """
+    Декодирует зашифрованные внутренние URL-адреса Google News (news.google.com/articles/...)
+    в реальные ссылки целевых новостных изданий посредством эмуляции редиректа в браузере.
+    """
     if not google_news_items:
         return []
 
@@ -77,6 +87,7 @@ def decode_urls_with_selenium(google_news_items, max_results=None):
             try:
                 driver.get(url)
 
+                # Автоматический клик по модальным окнам согласия (GDPR / Google Cookie Policy)
                 if not consent_accepted:
                     try:
                         xpath_btn = "//button[contains(., 'Принять') or contains(., 'Accept') or contains(., 'agree') or contains(., 'согласен')]"
@@ -89,7 +100,7 @@ def decode_urls_with_selenium(google_news_items, max_results=None):
                         time.sleep(1)
                     except:
                         pass
-
+                # Ожидание перенаправления с домена поисковика на конечный сайт новости
                 try:
                     WebDriverWait(driver, 8).until(
                         lambda d: "google.com" not in d.current_url
@@ -107,6 +118,7 @@ def decode_urls_with_selenium(google_news_items, max_results=None):
                         print(f" Не удалось пробиться через: {url[:50]}...")
 
             except BaseException as e:
+                # Обработка прерывания потока пользователем из веб-интерфейса Streamlit
                 err_name = type(e).__name__
                 if err_name == "ScriptRunnerStopException" or err_name == "StopException":
                     print(" Пользователь принудительно остановил выполнение в Streamlit! Выходим...")
@@ -130,6 +142,10 @@ def decode_urls_with_selenium(google_news_items, max_results=None):
 
 
 def search_news_by_keyword(keyword, start_date=None, end_date=None, max_results=None):
+    """
+    Выполняет синтаксический разбор новостного RSS-потока Google News с использованием
+    расширенных поисковых операторов (before/after) для фильтрации временного диапазона.
+    """
     query = keyword
 
     if start_date and end_date:
@@ -151,7 +167,7 @@ def search_news_by_keyword(keyword, start_date=None, end_date=None, max_results=
 
         root = ET.fromstring(response.content)
 
-        # СОБИРАЕМ ПАРУ: ССЫЛКА + ДАТА ИЗ RSS
+        # Разбор XML элементов структуры RSS-ленты поисковой выдачи
         google_news_items = []
         for item in root.findall('.//item'):
             link_txt = item.find('link').text
@@ -165,8 +181,6 @@ def search_news_by_keyword(keyword, start_date=None, end_date=None, max_results=
             })
 
         print(f" Найдено {len(google_news_items)} сырых ссылок в RSS.")
-
-        # Передаем структурированный список в дешифратор
         return decode_urls_with_selenium(google_news_items, max_results=max_results)
     except Exception as e:
         print(f"❌ Ошибка RSS: {e}")
@@ -174,11 +188,14 @@ def search_news_by_keyword(keyword, start_date=None, end_date=None, max_results=
 
 
 def search_news_in_yandex(keyword, start_date=None, end_date=None, max_results=None):
+    """
+    Эмулирует поисковый запрос к веб-интерфейсу Яндекс Поиска,
+    парсит HTML DOM дерево выдачи и извлекает валидные внешние ссылки на статьи.
+    """
     query = keyword
     print(f" Запрос к Яндекс Поиску для фразы: '{keyword}'")
 
     encoded_query = quote(query)
-    # Используем URL обычного веб-поиска, так как он открывается у тебя идеально!
     web_url = f"https://yandex.by/search/?text={encoded_query}&lr=157"
 
     driver = get_selenium_driver()
@@ -194,8 +211,9 @@ def search_news_in_yandex(keyword, start_date=None, end_date=None, max_results=N
             return []
 
         elements = driver.find_elements(By.TAG_NAME, "a")
-
         seen_urls = set()
+
+        # Сбор и фильтрация внутренних сервисных ссылок Яндекса и социальных сетей
         for elem in elements:
             try:
                 url = elem.get_attribute("href")
@@ -232,6 +250,3 @@ def search_news_in_yandex(keyword, start_date=None, end_date=None, max_results=N
             print(" Браузер Яндекса успешно закрыт.")
         except:
             pass
-
-def decode_google_news_url():
-    return None

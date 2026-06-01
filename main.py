@@ -58,6 +58,7 @@ def main():
     print(f"\n Шаг 4/4: Математическое определение первоисточника...")
     winner, reason = find_original_source(articles)
 
+    # Синхронизация консольных результатов с общей базой данных проекта
     for art in articles:
         is_original = (art['url'] == winner['url'])
         result_data = {

@@ -8,6 +8,10 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 
 def make_timezone_naive(dt):
+    """
+        Приводит объект datetime к единому формату UTC и удаляет информацию о таймзоне
+        для корректного сравнения дат между собой.
+    """
     if dt is None:
         return None
     if dt.tzinfo is not None:
@@ -16,6 +20,10 @@ def make_timezone_naive(dt):
 
 
 def find_original_source(articles):
+    """
+        Алгоритм определения первоисточника на основе временного фактора,
+        рейтинга доверия ресурса и семантической уникальности текста.
+    """
     if not articles:
         return None, "Нет статей для анализа"
 
@@ -33,7 +41,7 @@ def find_original_source(articles):
             valid_articles.append(art_copy)
 
     if not valid_articles:
-        # Если нет статей с полными данными, пробуем без дат
+    # Если нет статей с полными данными, пробуем без дат
         for art in articles:
             if art.get('reliability_score') is not None and art.get('unique_score') is not None:
                 art_copy = art.copy()
@@ -43,20 +51,18 @@ def find_original_source(articles):
     if not valid_articles:
         return None, "Нет статей с полными данными"
 
-    # Разделяем статьи с датой и без даты
+    # Разделяем статьи с датой
     with_date = [a for a in valid_articles if a['date'] is not None]
-    without_date = [a for a in valid_articles if a['date'] is None]
 
+    # Группировка и поиск самой ранней даты публикации
     if with_date:
         sorted_by_date = sorted(with_date, key=lambda x: x['date'])
 
-        # Группируем по дате (по году-месяцу-дно)
         date_groups = {}
         for art in sorted_by_date:
             date_str = art['date'].strftime('%Y-%m-%d')
             date_groups.setdefault(date_str, []).append(art)
 
-        # Самая ранняя дата
         earliest_date = min(date_groups.keys())
         candidates = date_groups[earliest_date]
     else:
@@ -68,7 +74,7 @@ def find_original_source(articles):
         reason = "Самая ранняя публикация"
         return winner, reason
 
-    # Среди кандидатов выбираем с максимальным рейтингом
+    # Фильтрация по критерию авторитетности (Reliability Score) при совпадении дат
     max_reliability = max(c['reliability_score'] for c in candidates)
     reliability_candidates = [c for c in candidates if c['reliability_score'] == max_reliability]
 
@@ -77,7 +83,7 @@ def find_original_source(articles):
         reason = f"Самая ранняя публикация и наивысший рейтинг ({max_reliability})"
         return winner, reason
 
-    # Выбираем с максимальной уникальностью
+    # Фильтрация по максимальной уникальности текста (устранение дубликатов)
     winner = max(reliability_candidates, key=lambda x: x['unique_score'])
     reason = (f"Самая ранняя публикация, наивысший рейтинг ({max_reliability}), "
               f"наибольшая уникальность ({winner['unique_score']:.2f})")
