@@ -16,20 +16,51 @@ def main():
     print(" OSINT-SYSTEM: ПОИСК ПЕРВОИСТОЧНИКА (Console Version)")
     print("=" * 60)
 
-    query = input("\n Введите тему для расследования (например, 'последний звонок Гродно'): ").strip()
+    query = input("\n Введите тему для расследования: ").strip()
     if not query:
         print(" Ошибка: пустой запрос.")
         return
+
+    # Интерактивный выбор временного диапазона для ограничения выборки
+    print("\n Выберите временной диапазон для поиска:")
+    print(" [1] За последние 24 часа (1d)")
+    print(" [2] За последнюю неделю (7d)")
+    print(" [3] За последний месяц (30d) — Рекомендуется")
+    print(" [4] За всё время (Глубокий поиск)")
+
+    choice = input(" Введите номер варианта [1-4] (по умолчанию 3): ").strip()
+
+    time_suffix = ""
+    if choice == "1":
+        time_suffix = " when:1d"
+    elif choice == "2":
+        time_suffix = " when:7d"
+    elif choice == "4":
+        time_suffix = ""
+    else:
+        time_suffix = " when:30d"
+
+    # Модификация поискового запроса временным фильтром для Google News RSS
+    final_query = f"{query}{time_suffix}"
 
     # Сбор данных из двух поисковых систем (Google + Яндекс)
     print(f"\n Шаг 1/4: Поиск и автоматическая дешифровка ссылок...")
 
     print(" Сканирование Google News RSS...")
-    google_res = search_news_by_keyword(query)
+    google_res = search_news_by_keyword(final_query)
+
+    # Ограничение количества ссылок для оптимизации демонстрации на защите
+    max_links = 15
+    if len(google_res) > max_links:
+        google_res = google_res[:max_links]
+
     print(f"   Найдено и раскрыто через Google: {len(google_res)} ссылок.")
 
     print(" Сканирование Яндекс RSS...")
     yandex_res = search_news_in_yandex(query)
+    if len(yandex_res) > max_links:
+        yandex_res = yandex_res[:max_links]
+
     print(f"   Найдено и раскрыто через Яндекс: {len(yandex_res)} ссылок.")
 
     combined_items = google_res + yandex_res
