@@ -1,5 +1,6 @@
 import streamlit as st
 import sys
+import re
 import os
 import pandas as pd
 import json
@@ -22,13 +23,53 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 logging.getLogger("transformers").setLevel(logging.ERROR)
 
+
+def calculate_relevance_rate(article_text, keyword, article_title=""):
+    """
+    Рассчитывает процент совпадения слов из запроса с текстом и заголовком статьи.
+    """
+    if not keyword:
+        return 0.0
+
+    # Соединяем заголовок и текст, чтобы поиск шел по всему массиву данных статьи
+    combined_text = f"{str(article_title)} {str(article_text)}".lower()
+    keyword_lower = keyword.lower()
+
+    # Разбираем поисковый запрос на отдельные слова, очищая от знаков препинания
+    raw_words = re.findall(r'[а-яа-ёa-z0-9\-]+', keyword_lower)
+
+    # Исключаем слишком короткие слова/предлоги/союзы (меньше 3 символов)
+    significant_words = [w for w in raw_words if len(w) > 2]
+    if not significant_words:
+        significant_words = raw_words
+
+    if not significant_words:
+        return 0.0
+
+    # Функция для базового стемминга
+    def get_word_base(word):
+        if len(word) <= 3:
+            return word
+        return re.sub(r'(ами|ями|ов|ев|ей|ия|ие|ий|ый|ому|ему|ах|ях|ом|ем|а|я|о|е|и|ы|у|ь)$', '', word)
+
+    word_bases = [get_word_base(w) for w in significant_words]
+
+    # Считаем совпадения в объединенном тексте (заголовок + тело)
+    matched_count = 0
+    for base in word_bases:
+        if base in combined_text:
+            matched_count += 1
+
+    return matched_count / len(significant_words)
+
+
 st.set_page_config(
     page_title="Поиск первоисточника новостей",
     page_icon="📰",
     layout="wide"
 )
 
-st.title(" Автоматизированный поиск первоисточника новостей")
+st.title(" 📰 Автоматизированный поиск первоисточника новостей")
 st.markdown("---")
 
 # --- БЛОК БОКОВОЙ ПАНЕЛИ УПРАВЛЕНИЯ ---
@@ -48,7 +89,8 @@ with st.sidebar:
         urls_text = st.text_area(
             "Вставьте ссылки на новости (каждая с новой строки):",
             height=150,
-            placeholder="https://belta.by/...nhttps://grodnonews.by/..."
+            placeholder="https://belta.by/...n"
+                        "https://grodnonews.by/..."
         )
 
         if st.button(" Загрузить и анализировать", type="primary"):
@@ -171,11 +213,104 @@ with st.sidebar:
 if 'run_analysis' in st.session_state and st.session_state['run_analysis']:
     with st.spinner(" Сбор и анализ статей..."):
 
+        # Фиксируем точное время старта анализа для отслеживания яндексовских заглушек datetime.now()
+        analysis_start_time = datetime.now()
+
         # Краулинг контента и очистка HTML разметки
-        articles = collect_articles_from_urls(st.session_state['urls'])
-        if not articles:
+        raw_articles = collect_articles_from_urls(st.session_state['urls'])
+        if not raw_articles:
             st.error("Не удалось загрузить ни одной статьи. Проверьте доступность ресурсов.")
             st.stop()
+
+        # --- НАЧАЛО СЕМАНТИЧЕСКОЙ ФИЛЬТРАЦИИ ---
+        articles = []
+        keyword_val = st.session_state.get('keyword_input') if input_method == "Ключевое слово (поиск)" else None
+
+        if input_method == "Ключевое слово (поиск)" and keyword_val:
+            raw_kw_words = re.findall(r'[а-яа-ёa-z0-9\-]+', keyword_val.lower())
+            sig_kw_words = [w for w in raw_kw_words if len(w) > 2] or raw_kw_words
+
+            for art in raw_articles:
+                # 1. Базовый расчет релевантности текста + заголовка
+                relevance_rate = calculate_relevance_rate(art['text'], keyword_val, art['title'])
+
+                # 2. Строгая проверка заголовка
+                title_lower = art['title'].lower()
+                title_matches = 0
+
+                for w in sig_kw_words:
+                    base = re.sub(r'(ами|ями|ов|ев|ей|ия|ие|ий|ый|ому|ему|ах|ях|ом|ем|а|я|о|е|и|ы|у|ь)$', '', w)
+                    if base in title_lower:
+                        title_matches += 1
+
+                title_coverage = title_matches / len(sig_kw_words) if sig_kw_words else 0.0
+
+                # Применяем весовые коэффициенты к релевантности
+                if title_coverage >= 0.8:
+                    relevance_rate += 5.0  # Огромный приоритет для целевой новости (все слова в заголовке)
+                elif title_coverage >= 0.5:
+                    relevance_rate += 1.0  # Небольшой бонус для частичных совпадений
+
+                # Пропускаем в финальный пул только те статьи, где есть хоть какой-то намек на контекст
+                if relevance_rate >= 0.4:
+                    art['relevance_rate'] = relevance_rate
+                    articles.append(art)
+                else:
+                    print(f"   [Семантический фильтр] Отсечена нерелеватная статья ({art['title']})")
+        else:
+            # Если это режим "Список URL", просто копируем все статьи с максимальным весом
+            for art in raw_articles:
+                art['relevance_rate'] = 1.0
+                articles.append(art)
+
+        # Резервный Fallback: если фильтр отсек вообще всё, принудительно возвращаем все исходные статьи
+        if not articles and raw_articles:
+            print("   [Семантический фильтр] Предупреждение: все статьи отсечены. Включается резервный режим.")
+            for art in raw_articles:
+                art['relevance_rate'] = 1.0
+                articles.append(art)
+        # --- КОНЕЦ СЕМАНТИЧЕСКОЙ ФИЛЬТРАЦИИ ---
+
+        # --- ФИЛЬТРАЦИЯ ПОИСКА И ВАЛИДАЦИЯ ДАТ ---
+        cleaned_articles = []
+        for art in articles:
+            url_lower = art['url'].lower()
+            title_lower = art['title'].lower()
+
+            # 1. Вырезаем левые поисковые редиректы, рекламу и мусорные домены, просочившиеся из браузера
+            if any(trash in url_lower for trash in
+                   ["bing.com/search", "google.com/search", "yandex.by/search", "reklama", "promo"]):
+                print(f"   [Фильтр мусора] Исключена системная/рекламная ссылка: {art['url']}")
+                continue
+
+            # 2. Если в заголовок попал сам технический поисковый запрос — удаляем
+            if "date:" in title_lower or "after:" in title_lower or "before:" in title_lower:
+                print(f"   [Фильтр мусора] Исключен битый технический заголовок: {art['title']}")
+                continue
+
+            # 3. Безопасная борьба с фейковыми датами Яндекса + жесткая проверка календаря
+            if art.get('date'):
+                # Проверяем, не является ли дата системной заглушкой datetime.now()
+                time_diff = abs((art['date'] - analysis_start_time).total_seconds())
+                if time_diff < 5.0:  # Разница меньше 5 секунд означает системный автогенератор Яндекса
+                    art['is_date_fake'] = True
+                else:
+                    art['is_date_fake'] = False
+
+                # Фильтрация по календарному периоду (выбрасываем статьи, не входящие в ползунки дат)
+                if input_method == "Ключевое слово (поиск)" and not all_time:
+                    article_date = art['date'].date()
+                    if not (start_date <= article_date <= end_date):
+                        print(
+                            f"   [Фильтр дат] Статья полностью удалена (вне диапазона): {art['title']} ({article_date})")
+                        continue
+            else:
+                art['is_date_fake'] = False
+
+            cleaned_articles.append(art)
+
+        articles = cleaned_articles
+        # --- КОНЕЦ ФИЛЬТРАЦИИ ---
 
         # Расчет рейтинга доверия (Reliability Score) для доменов
         domain_scores = analyze_and_rate_domains(articles)
@@ -185,10 +320,53 @@ if 'run_analysis' in st.session_state and st.session_state['run_analysis']:
         # Оценка семантической уникальности текстовых блоков (NLTK / RuBERT)
         articles = analyze_texts(articles)
 
-        # Агрегирующий математический выбор первоисточника
-        winner, reason = find_original_source(articles)
 
-        keyword_val = st.session_state.get('keyword_input') if input_method == "Ключевое слово (поиск)" else None
+        # --- ИЕРАРХИЧЕСКОЕ РАНЖИРОВАНИЕ ПЕРВОИСТОЧНИКА ---
+        # Сортируем статьи по каскадному принципу:
+        # 1. Главный абсолютный критерий: Семантика заголовка и релевантность текста (-rate).
+        # 2. Главный хронологический критерий: Время публикации (timestamp от старых к новым). Часы и минуты учитываются строго!
+        def get_sorting_priority(x):
+            # Базовая релевантность (включает жесткие +5.0 за совпадение ключевых слов в заголовке)
+            rate = x.get('relevance_rate', 0.0)
+
+            # Извлекаем временную метку (хронология)
+            date_val = x.get('date')
+
+            # Если дата фейковая (не распозналась на сайте Яндекса),
+            # ставим огромный искусственный timestamp, уводя статью в самый конец списка результатов
+            if x.get('is_date_fake', False):
+                timestamp = 3786912000.0  # Коэффициент-штраф
+            else:
+                timestamp = date_val.timestamp() if date_val else 3786912000.0
+
+            if input_method == "Список URL":
+                # В режиме экспресс-анализа по URL текстовый поиск отключен, сортируем строго по времени
+                return (0, timestamp)
+
+            return (timestamp, -rate)
+
+
+        # Выполняем сортировку пула
+        sorted_articles = sorted(articles, key=get_sorting_priority)
+
+        if not sorted_articles:
+            st.error(
+                "❌ В указанном диапазоне дат не найдено релевантных новостей. Попробуйте расширить временной интервал поиска.")
+            st.session_state['run_analysis'] = False
+            st.stop()
+
+        winner = sorted_articles[0]
+
+        # Переопределяем причину для вывода статуса в интерфейсе
+        winner_percent = int(winner.get('relevance_rate', 1.0) * 100)
+
+        # Формируем аргументацию
+        if winner_percent >= 500:
+            base_reason = f"Статья определена как первоисточник, так как ключевые слова найдены непосредственно в ЗАГОЛОВКЕ, а время публикации является самым ранним в группе ({winner['date'].strftime('%d.%m.%Y %H:%M') if winner['date'] else 'время не указано'})."
+        else:
+            base_reason = f"Статья выбрана по минимальному временному штампу среди релевантных документов контента."
+
+        reason = base_reason
 
         # Каскадное сохранение результатов в реляционную базу данных SQLite
         for art in articles:
@@ -219,6 +397,7 @@ if 'articles' in st.session_state:
 
     domain_scores = st.session_state.get('domain_scores', {})
     reason = st.session_state.get('reason', 'Первоисточник определен на основе временных и текстовых метрик.')
+    keyword_val = st.session_state.get('keyword_input') if input_method == "Ключевое слово (поиск)" else None
 
     tab1, tab2, tab3, tab4 = st.tabs([
         " Первоисточник",
@@ -252,7 +431,7 @@ if 'articles' in st.session_state:
             export_data = {
                 "analysis_date": datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
                 "method": input_method,
-                "query_keyword": keyword_val if input_method == "Ключевое слово (поиск)" else None,
+                "query_keyword": keyword_val,
                 "detected_original_source": {
                     "title": winner['title'],
                     "url": winner['url'],

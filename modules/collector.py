@@ -62,8 +62,8 @@ def extract_date_from_html(html, url):
 
 def fetch_article(url, rss_date=None):
     """
-    Многоуровневый загрузчик контента. Скачивает тело статьи, очищает HTML-теги
-    и валидирует временные метки публикации.
+    Многоуровневый загрузчик контента. Скачивает тело статьи, очищает HTML-теги,
+    блокирует шум бесконечных новостных лент (Infinite Scroll) и валидирует временные метки.
     """
     domain_lower = urlparse(url).netloc.lower()
 
@@ -91,12 +91,31 @@ def fetch_article(url, rss_date=None):
         title = article.title
         text = article.text
         date = article.publish_date
+        meta_description = article.meta_description
 
+        # Модификация 1: Настройка жесткой фильтрации сайдбаров и блоков рекомендаций в trafilatura
         if not text or len(text) < 300:
-            print(f"   ⚠️ Мало текста через newspaper, пробую trafilatura...")
+            print(f"   ⚠️ Мало текста через newspaper, пробую очищенный trafilatura...")
             downloaded = trafilatura.fetch_url(url)
             if downloaded:
-                text = trafilatura.extract(downloaded)
+                text = trafilatura.extract(
+                    downloaded,
+                    include_comments=False,  # Отсекаем блоки комментариев пользователей
+                    include_tables=False,    # Отсекаем таблицы со спортивными результатами и курсами валют
+                    no_fallback=True         # Запрещаем парсить всё подряд при разрушении DOM-структуры
+                )
+
+        # Модификация 2: Радикальная защита от Infinite Scroll
+        # Если длина текста превышает 9000 символов — парсер гарантированно захватил чужие новости на странице.
+        if text and len(str(text)) > 9000:
+            print(f"   ⚠️ Обнаружен аномальный объем текста ({len(text)} симв.). Защита от бесконечной ленты!")
+            if meta_description and len(meta_description.strip()) > 20:
+                text = f"{title}. {meta_description}"
+                print("   [Успешно] Текст статьи изолирован и заменен на чистые метаданные (Title + Description).")
+            else:
+                # Если мета-описания нет, берем первые 2000 символов — там гарантированно идет целевой текст новости
+                text = text[:2000]
+                print("   [Успешно] Текст принудительно обрезан до первых 2000 символов для удаления хвоста ленты.")
 
         # Валидация даты: если дата не найдена или совпадает с сегодняшней (ошибка кэша), ищем в HTML
         if not date or (date and date.date() == datetime.now().date()):

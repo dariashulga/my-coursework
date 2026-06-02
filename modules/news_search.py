@@ -189,44 +189,92 @@ def search_news_by_keyword(keyword, start_date=None, end_date=None, max_results=
 
 def search_news_in_yandex(keyword, start_date=None, end_date=None, max_results=None):
     """
-    Эмулирует поисковый запрос к веб-интерфейсу Яндекс Поиска,
-    парсит HTML DOM дерево выдачи и извлекает валидные внешние ссылки на статьи.
+    Улучшенный парсинг Яндекс.Поиска с защитой от блокировок,
+    поддержкой временных диапазонов и обработкой капчи.
     """
+    # 1. Формируем правильный поисковый запрос Яндекса с учетом дат
     query = keyword
-    print(f" Запрос к Яндекс Поиску для фразы: '{keyword}'")
+    if start_date and end_date:
+        start_str = start_date.strftime('%d.%m.%Y')
+        end_str = end_date.strftime('%d.%m.%Y')
+        print(f"  Запрос к Яндекс Поиску для фразы: '{keyword}' в диапазоне с {start_str} по {end_str}")
+        # Используем легитимный синтаксис Яндекса для фильтрации дат внутри запроса
+        query = f"{keyword} date:{start_str}..{end_str}"
+    else:
+        print(f"  Запрос к Яндекс Поиску для фразы: '{keyword}' за всё время")
 
     encoded_query = quote(query)
-    web_url = f"https://yandex.by/search/?text={encoded_query}&lr=157"
+    # Сортировка по времени, чтобы самые ранние/свежие новости были структурированы
+    web_url = f"https://yandex.by/search/?text={encoded_query}&lr=157&ft=rev"
 
-    driver = get_selenium_driver()
+    # 2. Запускаем браузер
+    print("  Запуск маскированного браузера для обхода защиты Яндекса...")
+
+    chrome_options = Options()
+    # Мы НЕ пишем --headless, чтобы дать системе открыться в обычном окне.
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Скрывает, что это Selenium
+    chrome_options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+    # Подключаем папку профиля, чтобы сохранять куки
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(current_dir)
+    bot_profile_path = os.path.join(project_root, "data", "bot_chrome_profile")
+    chrome_options.add_argument(f"--user-data-dir={bot_profile_path}")
+    chrome_options.add_argument("--profile-directory=YandexBotProfile")
+
+    try:
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+    except Exception as e:
+        print(f" ⚠️ Ошибка профиля, запускаем чистый Chrome: {e}")
+        fallback_options = Options()
+        fallback_options.add_argument("--disable-blink-features=AutomationControlled")
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=fallback_options)
+
     yandex_news_items = []
 
     try:
         driver.get(web_url)
-        time.sleep(4)
+        time.sleep(3)
 
+        # 3. УМНЫЙ ПЕРЕХВАТ КАПЧИ
         page_source = driver.page_source.lower()
-        if "captcha" in page_source or "робот" in page_source:
-            print(" Яндекс заблокировал запрос капчей. Пропускаем.")
-            return []
+        if "captcha" in page_source or "робот" in page_source or "checkbox" in page_source:
+            print("\n  [ВНИМАНИЕ] Яндекс вывел капчу!")
+            print("  У тебя есть 20 секунд, чтобы КЛИКНУТЬ по чекбоксу 'Я не робот' в открывшемся окне браузера...")
 
-        elements = driver.find_elements(By.TAG_NAME, "a")
+            for second in range(20):
+                time.sleep(1)
+                if "captcha" not in driver.page_source.lower() and "робот" not in driver.page_source.lower():
+                    print("  Капча успешно пройдена! Продолжаем сбор данных.")
+                    break
+            else:
+                print(" ❌ Время истекло. Капча не была разгадана. Пропускаем сессию.")
+                return []
+
+        # 4. СБОР ССЫЛОК ПО ВАЛИДНЫМ СЕЛЕКТОРАМ ВЫДАЧИ
+        # Ищем теги 'a' внутри основного поискового контейнера выдачи Яндекса
+        elements = driver.find_elements(By.CSS_SELECTOR, "a.OrganicTitle-Link, a.Link")
         seen_urls = set()
 
-        # Сбор и фильтрация внутренних сервисных ссылок Яндекса и социальных сетей
         for elem in elements:
             try:
                 url = elem.get_attribute("href")
                 if not url:
                     continue
 
-                if "yandex." in url or "ya.ru" in url or "pasport" in url or "viber" in url or "telegram" in url:
+                # отсекаем внутренний мусор Яндекса
+                if any(trash in url for trash in
+                       ["yandex.", "ya.ru", "pasport", "viber", "telegram", "vk.com", "zen.yandex"]):
                     continue
 
-                if url not in seen_urls and (url.startswith("http://") or url.startswith("https://")):
+                if url not in seen_urls and url.startswith("http"):
                     seen_urls.add(url)
 
-
+                    # Для Яндекса подтягиваем текущее время как базовый фолбэк,
                     yandex_news_items.append({
                         'url': url,
                         'rss_date': datetime.now()
@@ -234,7 +282,7 @@ def search_news_in_yandex(keyword, start_date=None, end_date=None, max_results=N
             except:
                 continue
 
-        print(f" Извлечено {len(yandex_news_items)} уникальных ссылок из выдачи Яндекса.")
+        print(f" Успешно извлечено {len(yandex_news_items)} уникальных новостных ссылок из Яндекса.")
 
         if max_results:
             yandex_news_items = yandex_news_items[:max_results]
@@ -242,7 +290,7 @@ def search_news_in_yandex(keyword, start_date=None, end_date=None, max_results=N
         return yandex_news_items
 
     except Exception as e:
-        print(f"❌ Ошибка при сборе данных из Яндекса: {e}")
+        print(f" ❌ Ошибка при работе с Яндексом: {e}")
         return []
     finally:
         try:
