@@ -44,3 +44,6 @@ Thumbs.db
 
 # Временный профиль браузера бота
 data/bot_chrome_profile/
+
+# Сгенерированный файл графа распространения
+data/propagation_graph.html
