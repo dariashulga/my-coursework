@@ -1,6 +1,8 @@
 # modules/collector.py
 
 import requests
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 from newspaper import Article, Config
 import trafilatura
 from datetime import datetime
@@ -78,20 +80,41 @@ def fetch_article(url, rss_date=None):
     print(f" Загрузка: {url}")
 
     try:
-        # Инициализация первого уровня парсинга через библиотеку newspaper
         config = Config()
         config.browser_user_agent = USER_AGENT
         config.request_timeout = REQUEST_TIMEOUT
 
-        article = Article(url, config=config)
-        article.download()
-        article.parse()
+        # Предварительно скачиваем HTML через requests с отключенной проверкой SSL (обход ошибок сертификатов)
+        headers = {'User-Agent': USER_AGENT}
+        resp = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT, verify=False)
 
-        # Второй уровень парсинга: применение trafilatura при неудаче базового парсера
-        title = article.title
-        text = article.text
-        date = article.publish_date
-        meta_description = article.meta_description
+        title = "Без заголовка"
+        text = ""
+        date = rss_date
+        meta_description = ""
+
+        if resp.status_code == 200:
+            html_content = resp.text
+
+            # Парсим контент через newspaper локально из готового HTML
+            article = Article(url, config=config)
+            article.download_state = 2
+            article.html = html_content
+            article.parse()
+
+            title = article.title
+            text = article.text
+            date = article.publish_date
+            meta_description = article.meta_description
+
+            # Подтягиваем дату из HTML, если newspaper её не нашел
+            if not date or (date and date.date() == datetime.now().date()):
+                html_date = extract_date_from_html(html_content, url)
+                if html_date:
+                    date = html_date
+        else:
+            print(f"   ⚠️ Ошибка HTTP {resp.status_code} для {url}")
+            return None
 
         # Модификация 1: Настройка жесткой фильтрации сайдбаров и блоков рекомендаций в trafilatura
         if not text or len(text) < 300:
